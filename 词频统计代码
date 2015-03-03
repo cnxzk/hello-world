@@ -1,0 +1,277 @@
+package questionAnswer;
+
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+public class ExtractAns {
+
+	Tagger tag = null;
+	String noMeaningWords[] ={"gene", "genes", "mutation", "mutations", "protein", "proteins", "diesease", "dieseases"}; 
+	protected void answer(JSONArray jArray) {
+		JSONObject question = new JSONObject();
+		String body = null;
+		String type = null;
+		List<String> ans = null;
+		
+		String resultPathName = "resource\\list.txt";
+		System.out.println(jArray.length());
+
+		for (int index = 0; index < jArray.length(); index++) {
+			try {
+				question = jArray.getJSONObject(index);
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			try {
+				body = question.getString("body");
+				type = question.getString("type");
+
+				if (type.equalsIgnoreCase("yesno")) {
+					// yn.add(body);
+					//ans = yn_ans(question);
+
+				} else if (type.equalsIgnoreCase("factoid")) {
+					// fact.add(body);
+					ans = factoid_ans(question);
+
+				} else if (type.equalsIgnoreCase("list")) {
+				
+					ans = list_ans(question);
+					write(">>>>>>>>>>" + body, resultPathName );
+					System.out.println(">>>>>>>>>>" + body);
+					for(String answer:ans){
+						System.out.println("\""+answer+"\"");
+						write("\""+answer+"\"", resultPathName );
+					}
+
+				} else {
+					// sum.add(body);
+					//ans = summary_ans(question);
+				}
+
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+		}
+	}
+
+	protected void write(String des, String outFile) {
+		try {
+			FileWriter writer = new FileWriter(outFile, true);
+			writer.write(des);
+			writer.write("\n");
+			writer.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+	}
+
+	protected List<String> wordCount(String text, List<String> qlist) { //统计名词数目
+		
+		String textTagger = new Tagger().tagText(text);
+		
+		List<String> word_list = new LinkedList<String>();
+
+		Map<String, Integer> words = new HashMap<String, Integer>();
+		
+		String text_split[] = textTagger.split("\\s+");
+			
+		for (String word : text_split) {
+			String pair[] = word.split("/");
+			if (pair[1].equals("NN") | pair[1].equals("NNS")| pair[1].equals("NNP") )
+			{
+				boolean isNeed = true;
+				for(String term : qlist){
+					if(pair[0].equalsIgnoreCase(term))
+						isNeed = false;
+				}
+				if(isNeed == true){
+					Integer freq = words.get(pair[0]);
+					words.put(pair[0], freq == null ? 1 : freq + 1);
+					word_list.add(pair[0]);
+				}				
+				// System.out.println(pair[0]);
+			}
+		}
+
+		return word_list;
+
+	}
+
+	public List<Entry<String, Integer>> sortKeywordMap( //排序
+			Map<String, Integer> keywordMap) {
+		List<Entry<String, Integer>> arrayList = new ArrayList<Entry<String, Integer>>(
+				keywordMap.entrySet());
+		Collections.sort(arrayList, new Comparator<Entry<String, Integer>>() {
+			public int compare(Entry<String, Integer> e1,
+					Entry<String, Integer> e2) {
+				return (e2.getValue()).compareTo(e1.getValue());
+			}
+		});
+
+		/*for (Entry<String, Integer> entry : arrayList) {
+			System.out.println(entry.getKey() + "  " + entry.getValue());
+		}*/
+		return arrayList;
+
+	}
+	protected List<Entry<List<String>, Integer>> sortListMap(Map<List<String>, Integer> listMap){
+		List<Entry<List<String>, Integer>> arrayList = new ArrayList<Entry<List<String>, Integer>>(
+				listMap.entrySet());
+		Collections.sort(arrayList, new Comparator<Entry<List<String>, Integer>>() {
+			public int compare(Entry<List<String>, Integer> e1,
+					Entry<List<String>, Integer> e2) {
+				return (e2.getValue()).compareTo(e1.getValue());
+			}
+		});
+		return arrayList;
+	}
+	protected String yn_ans(JSONObject question) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	protected List<String> factoid_ans(JSONObject question) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+
+	protected Map<List<String>, Integer> preprocess(JSONObject question) throws JSONException{
+		JSONArray snippets = question.getJSONArray("snippets");
+		
+		String queryTagger = new Tagger().tagText(question.getString("body"));
+		String query_split[] = queryTagger.split("\\s+");
+		
+		List<String> noNeedWords = new LinkedList<String>();
+		for (String word : query_split) {
+			String pair[] = word.split("/");
+			if (pair[1].equals("NN") | pair[1].equals("NNS")
+					| pair[1].equals("NNP")) {				
+				noNeedWords.add(pair[0]);
+			}
+		}
+		for (String word : noMeaningWords) {				
+				noNeedWords.add(word);			
+		}
+		List<String> keywords = new LinkedList<String>();
+		for (int i = 0; i < snippets.length(); i++) { //统计出现在相关片段的名词
+			JSONObject passage = snippets.getJSONObject(i);
+			String text = passage.getString("text");
+			keywords.addAll(wordCount(text, noNeedWords));
+		}
+		Map<String, Integer> wordMap = new HashMap<String, Integer>();
+
+		for (String keyword : keywords) {//统计各名词出现的次数
+			Integer freq = wordMap.get(keyword);
+			wordMap.put(keyword, freq == null ? 1 : freq + 1);
+		}
+		List<Entry<String, Integer>> sortList = sortKeywordMap(wordMap);
+		
+		Integer maxN = sortList.get(0).getValue(); //链表中出现单词最高的数目
+		
+		Map<List<String>, Integer> listMap = new HashMap<List<String>, Integer>();//相同次数的单词链表及其对应的次数
+		
+		List<String> sameNumberOfWord = new LinkedList<String>();
+		
+		for (Entry<String, Integer> entry : sortList) {//将出现相同次数的单词放在同一个链表中
+			//System.out.println(entry.getKey() + ":" + entry.getValue());
+			if (maxN.equals(entry.getValue())) {
+				sameNumberOfWord.add(entry.getKey().toString());
+				//System.out.print("maxN = " + maxN);System.out.println(listMap);
+			} else {
+				listMap.put(sameNumberOfWord, maxN);
+				sameNumberOfWord = null;
+				maxN = entry.getValue();				
+				sameNumberOfWord = new LinkedList<String>();
+				sameNumberOfWord.add(entry.getKey().toString());				
+			}
+		}
+		listMap.put(sameNumberOfWord, maxN);
+		return listMap;
+	}
+	protected List<String> list_ans(JSONObject question) throws JSONException {//抽取答案
+		JSONArray snippets = question.getJSONArray("snippets");
+
+		Map<List<String>, Integer> listMap = preprocess(question);
+		List<String> candidate = new LinkedList<String>();//候选答案的链表
+		int numberOfCandidate = 10;//返回最多10个答案
+		//System.out.println(listMap);
+		List<Entry<List<String>, Integer>> sortMap = sortListMap(listMap);
+		for (Entry<List<String>, Integer> entry : sortMap) 
+		{
+			System.out.println(entry.getKey() + "  " + entry.getValue());
+			if (entry.getValue() > 1 ) 
+			{
+				
+				if (entry.getKey().size() > 1 && numberOfCandidate > 0)
+				{
+					for (int first = 0; first < entry.getKey().size() - 1; first++) {
+						String firstWord = entry.getKey().get(first);
+						candidate.add(firstWord);
+						numberOfCandidate--;
+						for (int second = first + 1; second < entry.getKey().size() && numberOfCandidate > 0; second++) {
+							String secondWord = entry.getKey().get(second);
+							String order1 = firstWord + " " + secondWord;   //word成对顺序
+							String order2 = secondWord + " " + firstWord;
+							for (int i = 0; i < snippets.length(); i++) {
+								JSONObject passage = snippets.getJSONObject(i);
+								String text = passage.getString("text");
+								if (text.contains(order1)) {
+									candidate.add(order1);
+									numberOfCandidate--;
+									break;
+								}
+								if (text.contains(order2)) {
+									candidate.add(order2);
+									numberOfCandidate--;
+									break;
+								}
+							}
+				
+						}
+					}
+
+				}
+				else if(numberOfCandidate > 0){
+					candidate.add(entry.getKey().get(0));
+					numberOfCandidate--;
+				}
+				else {
+					break;
+				}
+			}
+			else{
+				for(int i = 0; i < entry.getKey().size() && entry.getKey().size() > 0 && numberOfCandidate > 0; i++){
+					candidate.add(entry.getKey().get(i));
+					numberOfCandidate--;
+					
+				}
+			}			
+		}
+	
+		return candidate;
+	
+	}
+
+	protected String summary_ans(JSONObject question) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+}
