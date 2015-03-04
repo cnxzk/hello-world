@@ -1,0 +1,500 @@
+package questionAnswer;
+
+import java.io.FileInputStream;
+import java.io.FileNotFoundException;
+import java.io.FileWriter;
+import java.io.IOException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.LinkedList;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.Scanner;
+
+import org.json.JSONArray;
+import org.json.JSONException;
+import org.json.JSONObject;
+
+public class ExtractAns {
+
+	String noMeaningWords[] ={"gene", "genes", "mutation", "mutations", "protein", "proteins", "disease", "diseases","drug","drugs", "chemical","chemicals","treatment", "treatments","data","time","research",
+			"approach", "approachs","method", "methods", "%","cell", "cells", "effect", "effects", "patient", "patients","cause","causes","type","types","case", "cases","target","targets",
+			"feature","features","symptom" ,"symptoms", "criteria","family","activity","day","year","month","days","years","months","result","results","study","tool","tools"}; 
+	protected List<String> read(String pmid, int split_len, String path)
+			throws FileNotFoundException {
+		FileInputStream inputStream = null;
+		Scanner sc = null;
+		List<String> mentions = new LinkedList<String>();
+
+		try {
+			inputStream = new FileInputStream(path);
+			sc = new Scanner(inputStream, "UTF-8");
+			while (sc.hasNextLine()) {
+
+				String line = sc.nextLine();
+
+				if (line.split(("\\s+"), split_len)[0].equals(pmid)) {
+					// System.out.println(line);
+					// System.out.println(line.split(("\\s+"),split_len)[split_len-1]);
+					mentions.add(line.split(("\\s+"), split_len)[split_len - 1]
+							.toLowerCase().trim());
+					while (sc.hasNextLine()) {
+						line = sc.nextLine();
+						if (line.split(("\\s+"))[0].equals(pmid)) {
+							mentions.add(line.split(("\\s+"), split_len)[split_len - 1]
+									.toLowerCase().trim());
+						} else
+							break;
+					}
+					break;
+				}
+
+			}
+			if (sc.ioException() != null) {
+				throw sc.ioException();
+			}
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} finally {
+			if (inputStream != null) {
+				try {
+					inputStream.close();
+				} catch (IOException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			if (sc != null) {
+				sc.close();
+			}
+		}
+
+		return mentions;
+	}
+
+	protected boolean isMatch(String candidate, JSONArray answer) throws JSONException{
+		for(int index = 0; index < answer.length(); index++){
+			if(candidate.equalsIgnoreCase(answer.getString(index)))
+				return true;
+		}
+		return false;
+	}
+	protected double fScore(List<String> extra_answers, JSONArray exact_answers) throws JSONException{
+		int lengthOfExtraAnswers = extra_answers.size();
+		int lengthOfExactAnswers = exact_answers.length();
+		System.out.println("(" + lengthOfExtraAnswers + "," + lengthOfExactAnswers +"");
+		int numberOfAccurate = 0;
+		for(String extra_answer : extra_answers){
+			for(int index = 0; index < lengthOfExactAnswers; index++){
+				JSONArray exact_answer = exact_answers.getJSONArray(index);
+				if(isMatch(extra_answer, exact_answer)){
+					numberOfAccurate++;
+					break;
+				}
+			}
+		}
+		
+		double precision = (double)numberOfAccurate / lengthOfExtraAnswers;
+	
+		double recall = (double)numberOfAccurate / lengthOfExactAnswers;
+		System.out.println("(" + numberOfAccurate + ","+precision + "," + recall + ")");
+		double fValue = 0.0;
+		if(precision + recall != (double) 0){
+			fValue = 2*(precision * recall)/(precision + recall);	
+		}
+		write("FValue = " + fValue, "resource\\list");
+		return fValue;
+		
+	}
+	protected void write(String des, String outFile) {
+		try {
+			FileWriter writer = new FileWriter(outFile, true);
+			writer.write(des);
+			writer.write("\n");
+			writer.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+	}
+	protected List<String> wordCount(String text, List<String> qlist) { //统计名词数目
+		
+		String textTagger = new Tagger().tagText(text);
+		
+		List<String> word_list = new LinkedList<String>();
+
+		Map<String, Integer> words = new HashMap<String, Integer>();
+		
+		String text_split[] = textTagger.split("\\s+");
+			
+		for (String word : text_split) {
+			String pair[] = word.split("/");
+			if (pair[1].equals("NN") | pair[1].equals("NNS")| pair[1].equals("NNP") )
+			{
+				boolean isNeed = true;
+				for(String term : qlist){
+					if(pair[0].equalsIgnoreCase(term))
+						isNeed = false;
+				}
+				if(isNeed == true){
+					Integer freq = words.get(pair[0]);
+					words.put(pair[0], freq == null ? 1 : freq + 1);
+					word_list.add(pair[0]);
+				}				
+				// System.out.println(pair[0]);
+			}
+		}
+
+		return word_list;
+
+	}
+	protected List<Entry<List<String>, Integer>> sortListMap(Map<List<String>, Integer> listMap){
+		List<Entry<List<String>, Integer>> arrayList = new ArrayList<Entry<List<String>, Integer>>(
+				listMap.entrySet());
+		Collections.sort(arrayList, new Comparator<Entry<List<String>, Integer>>() {
+			public int compare(Entry<List<String>, Integer> e1,
+					Entry<List<String>, Integer> e2) {
+				return (e2.getValue()).compareTo(e1.getValue());
+			}
+		});
+		return arrayList;
+	}
+	protected Map<List<String>, Integer> preprocess(JSONObject question) throws JSONException{
+		JSONArray snippets = question.getJSONArray("snippets");
+		
+		String queryTagger = new Tagger().tagText(question.getString("body"));
+		String query_split[] = queryTagger.split("\\s+");
+		
+		List<String> noNeedWords = new LinkedList<String>();
+		for (String word : query_split) {
+			String pair[] = word.split("/");
+			if (pair[1].equals("NN") | pair[1].equals("NNS")
+					| pair[1].equals("NNP")) {				
+				noNeedWords.add(pair[0]);
+			}
+		}
+		for (String word : noMeaningWords) {				
+				noNeedWords.add(word);			
+		}
+		List<String> keywords = new LinkedList<String>();
+		for (int i = 0; i < snippets.length(); i++) { //统计出现在相关片段的名词
+			JSONObject passage = snippets.getJSONObject(i);
+			String text = passage.getString("text");
+			keywords.addAll(wordCount(text, noNeedWords));
+		}
+		Map<String, Integer> wordMap = new HashMap<String, Integer>();
+
+		for (String keyword : keywords) {//统计各名词出现的次数
+			Integer freq = wordMap.get(keyword);
+			wordMap.put(keyword, freq == null ? 1 : freq + 1);
+		}
+		List<Entry<String, Integer>> sortList = sortKeywordMap(wordMap);
+		
+		Integer maxN = sortList.get(0).getValue(); //链表中出现单词最高的数目
+		
+		Map<List<String>, Integer> listMap = new HashMap<List<String>, Integer>();//相同次数的单词链表及其对应的次数
+		
+		List<String> sameNumberOfWord = new LinkedList<String>();
+		
+		for (Entry<String, Integer> entry : sortList) {//将出现相同次数的单词放在同一个链表中
+			//System.out.println(entry.getKey() + ":" + entry.getValue());
+			if (maxN.equals(entry.getValue())) {
+				sameNumberOfWord.add(entry.getKey().toString());
+				//System.out.print("maxN = " + maxN);System.out.println(listMap);
+			} else {
+				listMap.put(sameNumberOfWord, maxN);
+				sameNumberOfWord = null;
+				maxN = entry.getValue();				
+				sameNumberOfWord = new LinkedList<String>();
+				sameNumberOfWord.add(entry.getKey().toString());				
+			}
+		}
+		listMap.put(sameNumberOfWord, maxN);
+		return listMap;
+	}
+	protected void process(String content) {
+		try {
+			JSONObject question = new JSONObject(content);
+			JSONArray qInf = question.getJSONArray("questions");
+			ExtractAns ans = new ExtractAns();
+			ans.answer(qInf);
+
+		} catch (JSONException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+
+	}
+
+	protected void answer(JSONArray jArray) {
+		JSONObject question = new JSONObject();
+		JSONArray snippets = new JSONArray();
+		String body = null;
+		String type = null;
+		int number1 = 0, number2 = 1;
+		double sum = 0.0;
+		System.out.println(jArray.length());
+		List<String> yesno = new LinkedList<String>();
+		List<String> factoid = new LinkedList<String>();
+		List<String> list = new LinkedList<String>();
+		List<String> summary = new LinkedList<String>();
+		for (int index = 0; index < jArray.length(); index++) {
+			try {
+				question = jArray.getJSONObject(index);
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+			try {
+				body = question.getString("body");
+				type = question.getString("type");
+				
+				if (type.equalsIgnoreCase("yesno")) {
+					yesno.add(body);
+					// ans = yn_ans(question);
+
+				} else if (type.equalsIgnoreCase("factoid")) {
+					factoid.add(body);
+				
+					// List<String> ans = factoid_ans(question);
+
+				} else if (type.equalsIgnoreCase("list")) {
+					write(body, "resource\\list");
+					List<String> ans = list_ans(question);
+					System.out.println("The answers are " + ans);
+					write("Answer = " + ans, "resource\\list");
+					if(!ans.isEmpty()){
+						number1++;
+						sum +=fScore(ans, question.getJSONArray("exact_answer"));
+					}
+					list.add(body);
+
+				} else {
+					summary.add(body);
+					// ans = summary_ans(question);
+				}
+
+			} catch (JSONException e) {
+				// TODO Auto-generated catch block
+				e.printStackTrace();
+			}
+
+		}
+		System.out.println("F-Measure = " + (double)sum/number1);
+		/*print(yesno, "YesNo");
+		print(factoid,"Factoid");
+		print(list, "List");
+		print(summary, "Summary");*/
+		
+	}
+
+	protected void print(List<String> querys, String type){
+		System.out.println(type+"类型问题");
+		int index = 1;
+		for(String q : querys){
+			System.out.println("query_" + (index++) +":"+q);
+		}
+	}
+	protected List<String> yn_ans(JSONObject question) {
+
+		return null;
+	}
+
+	protected List<String> factoid_ans(JSONObject question) {
+		// List<String> docs = new LinkedList<String>();
+		JSONArray snnipts = null;
+		try {
+			if (question.getString("body").contains("How many")) {
+
+			}
+		} catch (JSONException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+		return null;
+	}
+
+	protected List<String> list_ans(JSONObject question) throws JSONException {
+		JSONArray docs = null;
+		String doc = null;
+		String pmid = null; int number = 0;
+		List<String> mentions = new LinkedList<String>();
+		List<String> ans = new LinkedList<String>();
+		docs = question.getJSONArray("documents");
+		if (question.getString("body").contains("Which diseases")) {
+			System.out.println(question.get("body"));
+			for (int i = 0; i < docs.length(); i++) {
+				doc = docs.getString(i);
+				pmid = doc.substring(doc.lastIndexOf('/') + 1);
+				// System.out.println(pmid);
+				try {
+					mentions.addAll(read(pmid, 3, "resource\\disease2pubtator"));
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			pubtatorAnswer(mentions);
+		}
+		if (question.getString("body").contains("Which drugs")) {
+			System.out.println(question.get("body"));
+			for (int i = 0; i < docs.length(); i++) {
+				doc = docs.getString(i);
+				pmid = doc.substring(doc.lastIndexOf('/') + 1);
+				// System.out.println(pmid);
+				try {
+					mentions.addAll(read(pmid, 3, "resource\\chemical2pubtator"));
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			pubtatorAnswer(mentions);
+		}
+		if (question.getString("body").contains("Which mutations")
+				| question.getString("body").contains("Which gene mutations")) {
+			System.out.println(question.get("body"));
+			for (int i = 0; i < docs.length(); i++) {
+				doc = docs.getString(i);
+				pmid = doc.substring(doc.lastIndexOf('/') + 1);
+				System.out.println(pmid);
+				try {
+					mentions.addAll(read(pmid, 3, "resource\\mutation2pubtator"));
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			pubtatorAnswer(mentions);
+		}
+		if (question.getString("body").contains("Which genes")
+				| question.getString("body").contains("Which oncogenes")
+				| question.getString("body").contains("Which proteins")
+				| question.getString("body").contains("What genes")) {
+			System.out.println(question.get("body"));
+			for (int i = 0; i < docs.length(); i++) {
+				doc = docs.getString(i);
+				pmid = doc.substring(doc.lastIndexOf('/') + 1);
+				System.out.println(pmid);
+				try {
+					mentions.addAll(read(pmid, 4, "resource\\gene2pubtator"));
+				} catch (FileNotFoundException e) {
+					// TODO Auto-generated catch block
+					e.printStackTrace();
+				}
+			}
+			
+			ans = pubtatorAnswer(mentions);//System.out.println(mentions);
+		}
+		else{
+			ans = keyWordsMethod(question);
+		}
+		
+		return ans;
+	}
+	private List<String> keyWordsMethod(JSONObject question) throws JSONException {
+		JSONArray snippets = question.getJSONArray("snippets");
+		Map<List<String>, Integer> listMap = preprocess(question);
+		List<String> candidate = new LinkedList<String>();//候选答案的链表
+		int numberOfCandidate = 15;//返回最多15个答案
+		//System.out.println(listMap);
+		List<Entry<List<String>, Integer>> sortMap = sortListMap(listMap);
+		for (Entry<List<String>, Integer> entry : sortMap) 
+		{
+			System.out.println(entry.getKey() + "  " + entry.getValue());
+			if (entry.getValue() > 1 ) 
+			{
+				
+				if (entry.getKey().size() > 1 && numberOfCandidate > 0)
+				{
+					for (int first = 0; first < entry.getKey().size() - 1; first++) {
+						String firstWord = entry.getKey().get(first);
+						candidate.add(firstWord);
+						numberOfCandidate--;
+						for (int second = first + 1; second < entry.getKey().size() && numberOfCandidate > 0; second++) {
+							String secondWord = entry.getKey().get(second);
+							String order1 = firstWord + " " + secondWord;   //word成对顺序
+							String order2 = secondWord + " " + firstWord;
+							for (int i = 0; i < snippets.length(); i++) {
+								JSONObject passage = snippets.getJSONObject(i);
+								String text = passage.getString("text");
+								if (text.contains(order1)) {
+									candidate.add(order1);
+									numberOfCandidate--;
+									break;
+								}
+								if (text.contains(order2)) {
+									candidate.add(order2);
+									numberOfCandidate--;
+									break;
+								}
+							}
+				
+						}
+					}
+
+				}
+				else if(numberOfCandidate > 0){
+					candidate.add(entry.getKey().get(0));
+					numberOfCandidate--;
+				}
+				else {
+					break;
+				}
+			}
+			else{
+				for(int i = 0; i < entry.getKey().size() && entry.getKey().size() > 0 && numberOfCandidate > 0; i++){
+					candidate.add(entry.getKey().get(i));
+					numberOfCandidate--;
+					
+				}
+			}			
+		}
+	
+		return candidate;
+	}
+
+	protected List<String> pubtatorAnswer(List<String> mentions){
+		Map<String, Integer> candidates = new HashMap<String, Integer>();
+
+		for (String mention : mentions) {
+			Integer freq = candidates.get(mention);
+			candidates.put(mention, freq == null ? 1 : freq + 1);
+		}
+		List<Entry<String, Integer>> sortMap = sortKeywordMap(candidates);
+		
+		List<String> ans = new LinkedList<String>();
+		for (Entry<String, Integer> entry : sortMap) {
+			ans.add(entry.getKey());
+			// System.out.println(entry.getKey() + "  " + entry.getValue());
+		}
+		return ans;
+	}
+	public List<Entry<String, Integer>> sortKeywordMap(
+			Map<String, Integer> keywordMap) {
+		List<Entry<String, Integer>> arrayList = new ArrayList<Entry<String, Integer>>(
+				keywordMap.entrySet());
+
+		Collections.sort(arrayList, new Comparator<Entry<String, Integer>>() {
+			public int compare(Entry<String, Integer> e1,
+					Entry<String, Integer> e2) {
+				return (e2.getValue()).compareTo(e1.getValue());
+			}
+		});
+		/*for (Entry<String, Integer> entry : arrayList) {
+			System.out.println(entry.getKey() + "  " + entry.getValue());
+		}*/
+		return arrayList;
+	}
+
+	protected String summary_ans(JSONObject question) {
+		// TODO Auto-generated method stub
+		return null;
+	}
+}
+
