@@ -1,0 +1,41 @@
+private void rotate(int []nums, int k){
+		int len = nums.length;
+		if(len <= 1 || k <= 0) return;
+		if(nums.length < k ){
+			while((k--) != 0){
+				int temp = nums[nums.length - 1];
+				for(int i = nums.length - 2; i >= 0 ; i--){
+					nums[i+1] = nums[i];
+				}
+				nums[0] = temp;
+			}
+			for(int num : nums){
+				System.out.print(num + " ");
+			}
+			
+			System.out.println();
+			return;
+		}
+		for(int i = len - 1; i >= len - k; i--){
+			int temp = nums[i];
+			int j = i;
+			while((j - k) >= 0){
+				nums[j] = nums[j - k];
+				j -= k;
+			}
+			
+			nums[j] = temp;
+		}
+
+		int adjust = len % k;
+		
+		while((adjust--) != 0){
+			int temp = nums[0];
+			for(int i = 1; i < k ; i++){
+				nums[i-1] = nums[i];
+			}
+			nums[k-1] = temp;
+		}
+				
+	
+	}
